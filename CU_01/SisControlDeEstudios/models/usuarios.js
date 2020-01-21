@@ -1,6 +1,6 @@
 const conexion = require("../conexion")
 module.exports = {
-    async insertar(nombre, precio) {
+    async insertar(nombre, apellido) {
         let resultados = await conexion.query(`insert into tb_user
         (username
         ,firstname
@@ -18,7 +18,7 @@ module.exports = {
         const resultados = await conexion.query(`select id, firstname, lastname from tb_user where id = $1`, [id]);
         return resultados.rows[0];
     },
-    async actualizar(id, nombre, precio) {
+    async actualizar(id, nombre, apellido) {
         const resultados = conexion.query(`update tb_user
         set firstname = $1,
         lastname = $2,
@@ -26,8 +26,7 @@ module.exports = {
         return resultados;
     },
     async eliminar(id) {
-        const resultados = conexion.query(`delete from tb_user
-        where id = $1`, [id]);
+        const resultados = conexion.query(`delete from tb_user where id = $1`, [id]);
         return resultados;
     },
 }
