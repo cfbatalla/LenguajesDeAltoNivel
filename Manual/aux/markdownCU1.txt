@@ -1,0 +1,316 @@
+**Caso de Estudio I**  
+## SisControlDeEstudios
+Se debe desarrollar un sistema de registro académico, cuyos usuarios, según el contexto, podrán tener la condición de alumnos y/o profesores. El contexto será la materia en la que dicho usuario estara relacionado. Esta entidad estara representada en el sistema y tendrá las propiedades y los estados de un aula real. El backend de dicho sistema será una aplicación sobre el patrón desarrollada en Nodejs.
+
+<section id="6 Escenario">
+
+### Reglas De Negocio
+
+<table class="table table-sm table-bordered table-striped">
+
+<tbody>
+
+<tr>
+
+<td>REGLAS DE NEGOCIO</td>
+
+<td>DESCRIPCIÓN</td>
+
+</tr>
+
+<tr>
+
+<td>Username:</td>
+
+<td>Solo se aceptarán caracteres numéricos correspodientes al nro. de cédula del usuario</td>
+
+</tr>
+
+<tr>
+
+<td>Correo electrónico:</td>
+
+<td>Solo se aceptarán dominios gmail y ucla.edu.ve</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+</section>
+
+### Modelo
+
+### Base de Datos
+
+aqui van las consideraciones al escoger un db. Como se ajusta al mvc
+
+##### Escenario demostrativo PG
+
+aqui vas a colocar escenario demostrativo en PG donde se hagan validaciones que preserven la integridad del modelo. Para esto, debes crear unas tablas y crear unos DOMAINS asociado a esas tablas, con algun sistema de control de estudio como cumlaude. debes incluir un MER de esas hipotetica DB para ilustrarlo mejor. Como en consideraciones, colocaste que el idioma es ingles, los nombres de las tablas seran en ingles.
+
+##### Validaciones para proteger la Funcionalidad en el Modelo
+
+######  Constraint:
+
+especificacion tecnica de la creacion de la tabla y su constraint:
+```sql
+CREATE TABLE tb_user (
+          id serial PRIMARY KEY
+          ,deleted SMALLINT 
+          ,suspended SMALLINT
+          ,username VARCHAR(30)
+          ,firstname VARCHAR(100) not null
+          ,lastname VARCHAR(100) not null
+          ,email VARCHAR(100)
+          ,CHECK (deleted <1)
+          ,CHECK (suspended <1)  
+        );
+```
+
+
+###### Trigger:
+
+especificacion tecnica del trigger:
+
+```sql
+CREATE TRIGGER trValidaCorreo
+ BEFORE INSERT ON tb_user
+ FOR EACH ROW EXECUTE PROCEDURE validaCorreo();
+ ```
+
+```sql
+CREATE OR REPLACE FUNCTION validaCorreo() RETURNS trigger AS $$ 
+          BEGIN 
+           IF NEW.email ~* '^[A-Za-z0-9._%-]+@gmail.com+$' OR NEW.email ~* '^[A-Za-z0-9._%-]+@ucla.edu.ve+$' 
+            THEN 
+            ELSE RAISE EXCEPTION 'Solo son permitidos correos ucla.edu.ve o gmail.com'; 
+           END IF; 
+          RETURN NEW; 
+          END; 
+         $$ LANGUAGE plpgsql SECURITY DEFINER; 
+ ```
+
+######  Dominio:
+
+```sql
+ CREATE EXTENSION citext;
+    
+        CREATE DOMAIN dm_email AS citext
+        CHECK(
+           VALUE ~* '^[A-Za-z0-9._%-]+@gmail.com+$' 
+           OR ~* '^[A-Za-z0-9._%-]+@ucla.edu.ve+$' 
+           );
+```
+
+```sql
+ CREATE TABLE tb_user (
+ id serial primary key
+ ,deleted smallint
+ ,suspended smallint
+ ,username varchar(30)
+ ,firstname varchar(100) not null
+ ,lastname varchar(100) not null
+ ,email **dm_email**
+ );
+```
+
+```sql
+db_lenguajesaltonivel_demo=# SELECT 'lenguajesdealtonivel@gmail.com'::**dm_email**;
+ dm_email
+ --------------------------------
+ lenguajesdealtonivel@gmail.com
+ (1 row)
+```
+
+```sql
+ db_lenguajesaltonivel_demo=# SELECT 'lenguajesdealtonivel@gmail'::**dm_email**;
+ ERROR: value for domain **dm_email** violates check constraint "dm_email_check"
+```
+
+```sql
+ INSERT INTO "db_lenguajesaltonivel_demo"."public"."tb_user" (
+ deleted
+ ,suspended
+ ,username
+ ,firstname
+ ,lastname
+ ,email
+ )
+ VALUES
+ (
+ 0
+ ,0
+ ,'15598676'
+ ,'Carlos'
+ ,'Batalla'
+ ,'carlos@.com'
+ );
+ ERROR: value for domain **dm_email** violates check constraint "dm_email_check"
+```
+
+</section>
+
+<section>
+
+### Framework
+
+aqui van las consideraciones del framework
+
+</section>
+
+aqui van las consideraciones al escoger un db. Como se ajusta al mvc
+
+```js
+ const pg = require('pg')
+ const conString = "postgres://db_usr:pwd@serverName/db_lenguajesaltonivel_demo"
+ pg.connect(conString, (err, client) => {
+ client.query("SELECT * FROM tb_user", (err, res) => {
+ //en res.rows esta el arreglo que contiene los regs. del query
+ })
+ })
+```
+
+</section>
+### Implementación del Router
+Toda aplicación web necesita un componente que acute como acceso frontal y acepte queries, analize los parametros de la petición y decida cual modulo de nuestro sistema va a servir como resultado. Es decir, determina que datos deben ser entregados según la ruta de entrada.
+El archivo Router.js exporta dos métodos; 
+add registra las rutas aceptando como parámetros una ruta y una función handler, que es la que será llamada si es igual a la ruta.
+y check 
+
+```js
+module.exports = function () {
+  return {
+    routes: []
+    , root: '/'
+    , getFragment: function () {
+      var fragment = '';
+      fragment = this.clearSlashes(decodeURI(location.pathname + location.search));
+      fragment = fragment.replace(/\?(.*)$/, '');
+      fragment = this.root != '/' ? fragment.replace(this.root, '') : fragment;
+      return this.clearSlashes(fragment);
+    }
+    , clearSlashes: function (path) {
+      return path.toString().replace(/\/$/, '').replace(/^\//, '');
+    }
+    , add: function (re, handler) {
+      if (typeof re == 'function') {
+        handler = re;
+        re = '';
+      }
+      this.routes.push({ re: re, handler: handler });
+      return this;
+    }
+    , check: function (f, params) {
+      var fragment = typeof f !== 'undefined' ? f.replace(/^\//, '') : this.getFragment(), vars;
+      for (var i = 0; i < this.routes.length; i++) {
+        var match, re = this.routes[i].re;
+        re = re.replace(/^\//, '');
+        var vars = re.match(/:[^\s/]+/g);
+        var r = new RegExp('^' + re.replace(/:[^\s/]+/g, '([\\w-]+)'));
+        match = fragment.match(r);
+        if (match) {
+          match.shift();
+          var matchObj = {};
+          if (vars) {
+            for (var j = 0; j < vars.length; j++) {
+              var v = vars[j];
+              matchObj[v.substr(1, v.length)] = match[j];
+            }
+          }
+          this.routes[i].handler.apply({}, (params || []).concat([matchObj]));
+          return this;
+        }
+      }
+      return false;
+    }
+    , listen: function () {
+      var self = this;
+      var current = self.getFragment();
+      var fn = function () {
+        if (current !== self.getFragment()) {
+          current = self.getFragment();
+          self.check(current);
+        }
+      }
+      clearInterval(this.interval);
+      this.interval = setInterval(fn, 50);
+      return this;
+    }
+    , navigate: function (path) {
+      path = path ? path : '';
+      history.pushState(null, null, this.root + this.clearSlashes(path));
+      return this;
+    }
+  }
+};
+```
+
+
+### Implementando el acceso de entrada
+```js
+var Router = require('./lib/Router')();
+var Home = require('./controllers/Home');
+var currentPage;
+var body;
+
+var showPage = function (newPage) {
+  if (currentPage) currentPage.teardown();
+  currentPage = newPage;
+  body.innerHTML = '';
+  currentPage.render(body);
+}
+
+window.onload = function () {
+
+  body = document.querySelector('body');
+
+  Router
+    .add('home', function () {
+      var p = new Home();
+      showPage(p);
+    })
+    .add(function () {
+      Router.navigate('home');
+    })
+    .listen()
+    .check();
+}
+```
+### Definiendo el Controlador
+El rol del controlador es orquestar las páginas, es decir, es un empaquetador de paginas que gestiona los procesos que ocurren entre los subcomponentes.
+
+```js
+module.exports = Ractive.extend({
+    template: require('../../tpl/home'),
+    components: {
+        navigation: require('../views/Navigation'),
+        appfooter: require('../views/Footer')
+    },
+    onrender: function () {
+        console.log('render ejecutado');
+    }
+});
+```
+
+### Definiendo las Vistas
+/SisControlDeEstudios/frontend/js/views/navigation.js
+```js
+module.exports = Ractive.extend({
+  template: require('../../tpl/navigation')
+});
+```
+en la carpeta /SisControlDeEstudios/frontend/js/views/Footer.js
+```js
+var FooterModel = require('../models/Version');
+
+module.exports = Ractive.extend({
+  template: require('../../tpl/footer'),
+  onrender: function() {
+    var model = new FooterModel();
+    model.bindComponent(this).fetch();
+  }
+});
+```
+
